@@ -243,7 +243,7 @@ class Queue:
 ```python
 def hot_potato(names, num):
     """
-    热土豆模拟
+    传土豆模拟
     
     思路：
     用队列模拟圆圈——每次把队头移到队尾（传土豆），
