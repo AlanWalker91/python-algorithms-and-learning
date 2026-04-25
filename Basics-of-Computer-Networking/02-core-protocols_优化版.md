@@ -383,7 +383,7 @@ import socket
 def send_msg(sock, text):
     """发送一条消息：4字节长度头 + 消息体"""
     data = text.encode('utf-8')
-    header = struct.pack('>I', len(data))  # 大端序 4 字节无符号整数
+    header = struct.pack('>I', len(data))  # 大端序 4 字节无符号整数（> 表示大端序（网络传输的标准字节序），I 表示 4 字节无符号整数。作用：把一个整数变成固定 4 字节的二进制“头”。）
     sock.sendall(header + data)
 
 def recv_msg(sock):
