@@ -383,7 +383,7 @@ import socket
 def send_msg(sock, text):
     """发送一条消息：4字节长度头 + 消息体"""
     data = text.encode('utf-8')
-    header = struct.pack('>I', len(data))  # 大端序 4 字节无符号整数
+    header = struct.pack('>I', len(data))  # 大端序 4 字节无符号整数（> 表示大端序（网络传输的标准字节序），I 表示 4 字节无符号整数。作用：把一个整数变成固定 4 字节的二进制“头”。）
     sock.sendall(header + data)
 
 def recv_msg(sock):
@@ -651,20 +651,42 @@ HTTP 是无状态的——每个请求都是独立的，服务器不记得你之
 
 ```python
 import requests
-
-# === Cookie/Session 方式 ===
 session = requests.Session()
-session.post('https://httpbin.org/cookies/set/sessionid/abc123')
-# 后续请求自动带 Cookie
+
+# 1. 使用 GET 方式设置 Cookie（这是 httpbin 最稳定的设置方式）
+# 注意：这里我们手动把 sessionid 和 abc123 作为路径参数
+print("正在设置 Cookie...")
+session.get('https://httpbin.org/cookies/set/sessionid/abc123')
+
+# 2. 检查 session 对象里是否真的存下了 Cookie
+print(f"本地 Session 存储的 Cookies: {session.cookies.get_dict()}")
+
+# 3. 再次请求，看服务器是否识别
+print("正在验证服务器端的 Cookies...")
 resp = session.get('https://httpbin.org/cookies')
-print(resp.json())  # 能看到 sessionid=abc123
+print(f"服务器返回的结果: {resp.json()}")
 
 # === Token 方式 ===
-# 假设登录返回了 token
-token = "eyJhbGciOiJIUzI1NiJ9.xxxxx"
-headers = {"Authorization": f"Bearer {token}"}
-resp = requests.get('https://httpbin.org/headers', headers=headers)
-print(resp.json())  # 能看到 Authorization 头
+#使用 Python requests 手动模拟：Authorization: 身份验证的标准键名。Bearer : 注意后面有个空格。这是最常见的令牌类型。
+
+import requests
+
+# 1. 模拟你从登录接口拿到的 Token（绝大多数 Token 都是 JWT (JSON Web Token））
+my_token = "eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyIjp7IkFsYW4ifX0"
+
+# 2. 手动构造 Headers 字典
+custom_headers = {
+    "Authorization": f"Bearer {my_token}",
+    "Content-Type": "application/json"
+}
+
+# 3. 发送请求，手动传入 headers 参数
+response = requests.get('https://httpbin.org/headers', headers=custom_headers)
+
+# 4. 验证结果
+print(f"状态码: {response.status_code}")
+print("服务器收到的 Headers 如下：")
+print(response.json()['headers'])
 ```
 
 ---
