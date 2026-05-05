@@ -512,3 +512,394 @@ def test_create_order(login_token, test_data):
 ---
 
 *最后更新：2026-05-04*
+
+## 🌲 阶段 3 补充：分层架构详解
+
+### 完整 6 层目录结构
+
+```
+framework/
+├── config/                     # ⚙️ 配置层：管环境切换
+│   ├── config.yaml             # 各环境的 base_url、timeout 等
+│   └── setting.py              # 读取 yaml + 环境变量覆盖
+│
+├── base/                       # 🏗️ 基础层：底层 HTTP 封装
+│   └── base_api.py             # 统一 request()，自动加日志/token/超时/重试
+│
+├── api/                        # 🌐 接口层：业务接口封装
+│   ├── login_api.py            # 登录接口（继承 BaseAPI）
+│   ├── cart_api.py             # 购物车接口
+│   └── order_api.py            # 订单接口
+│
+├── data/                       # 📊 数据层：测试数据
+│   ├── login_data.yaml         # 登录测试数据
+│   └── order_data.yaml         # 下单测试数据
+│
+├── testcases/                  # 🧪 用例层：业务逻辑 + 断言
+│   ├── test_login.py           # 登录测试用例
+│   └── test_order.py           # 下单测试用例
+│
+├── utils/                      # 🔧 工具层：通用能力
+│   ├── log_util.py             # 日志工具（loguru）
+│   ├── db_util.py              # 数据库操作
+│   ├── yaml_util.py            # YAML 读取工具
+│   └── encrypt_util.py         # 加解密工具
+│
+├── conftest.py                 # 全局 fixture（登录 token 等）
+├── pytest.ini                  # pytest 配置
+└── requirements.txt            # 依赖清单
+```
+
+### 层与层的调用关系
+
+```
+testcases → api → base → requests库
+    ↓        ↓      ↓
+  data    config   utils(日志)
+```
+
+> 🎯 **一句话记住**：`base` 解决"怎么发请求"，`api` 解决"发什么请求"，`testcases` 解决"验证什么结果"。
+
+---
+
+### 面试题标准答案
+
+#### Q1：为什么 base 和 api 分两层？
+
+**标准答案**：
+> 遵循**高内聚低耦合**和 **DRY 原则**。base 层统一封装 HTTP 请求，负责日志记录、超时控制、异常处理、token 注入、失败重试等通用逻辑。api 层只关心业务接口的 URL 和参数，继承 base 层即可。如果直接在 api 里写 `requests.post()`，50 个接口文件都要改一遍才能加日志，违反了 DRY 原则。
+
+#### Q2：切环境改几个文件？
+
+**标准答案**：
+> **零文件修改**。`config/setting.py` 里用 `os.getenv('ENV', 'dev')` 读取环境变量，默认 dev 环境。切换时只需 `export ENV=prod`，Jenkins 流水线里设置环境变量即可，不需要改任何代码文件。
+
+---
+
+### 分层框架核心代码
+
+#### 1️⃣ config 配置层
+
+**config/config.yaml**
+```yaml
+# 各环境配置
+dev:
+  base_url: "http://dev-api.example.com"
+  timeout: 10
+  db_host: "dev-db.example.com"
+
+test:
+  base_url: "http://test-api.example.com"
+  timeout: 10
+  db_host: "test-db.example.com"
+
+prod:
+  base_url: "https://api.example.com"
+  timeout: 30
+  db_host: "prod-db.example.com"
+```
+
+**config/setting.py**
+```python
+import os
+import yaml
+
+# 1. 读取当前环境（默认 dev）
+ENV = os.getenv("ENV", "dev")
+
+# 2. 读取 yaml 配置
+with open("config/config.yaml", "r") as f:
+    _all_config = yaml.safe_load(f)
+
+# 3. 取当前环境的配置
+CONFIG = _all_config[ENV]
+
+# 使用方式：
+# from config.setting import CONFIG
+# CONFIG["base_url"]  →  "http://dev-api.example.com"
+```
+
+> 🎯 **面试考点**：`os.getenv("ENV", "dev")` 第二个参数是默认值，环境变量没设就用 dev。
+
+---
+
+#### 2️⃣ base 基础层
+
+**base/base_api.py**
+```python
+import requests
+from config.setting import CONFIG
+from utils.log_util import logger
+
+
+class BaseAPI:
+    """统一的 HTTP 请求封装"""
+
+    def __init__(self):
+        self.session = requests.Session()
+        self.base_url = CONFIG["base_url"]
+        self.timeout = CONFIG.get("timeout", 10)
+
+    def request(self, method, path, **kwargs):
+        """
+        统一请求入口
+        :param method: GET/POST/PUT/DELETE
+        :param path: 接口路径，如 "/api/login"
+        :param kwargs: 其他参数（json, data, params, headers...）
+        """
+        url = self.base_url + path
+
+        # 自动加超时
+        kwargs.setdefault("timeout", self.timeout)
+
+        # 记录请求日志
+        logger.info(f"请求: {method} {url}")
+        logger.debug(f"参数: {kwargs}")
+
+        # 发送请求
+        response = self.session.request(method, url, **kwargs)
+
+        # 记录响应日志
+        logger.info(f"响应: {response.status_code}")
+        logger.debug(f"响应体: {response.text[:500]}")
+
+        return response
+
+    def get(self, path, **kwargs):
+        return self.request("GET", path, **kwargs)
+
+    def post(self, path, **kwargs):
+        return self.request("POST", path, **kwargs)
+
+    def put(self, path, **kwargs):
+        return self.request("PUT", path, **kwargs)
+
+    def delete(self, path, **kwargs):
+        return self.request("DELETE", path, **kwargs)
+```
+
+> 🎯 **关键设计**：
+> - `self.session`：用 Session 保持连接，自动管理 Cookie
+> - `kwargs.setdefault`：不覆盖调用者传的值，只在没传时加默认值
+> - 所有请求都经过 `request()` 一个入口 → 加日志只改一处
+
+---
+
+#### 3️⃣ api 接口层
+
+**api/login_api.py**
+```python
+from base.base_api import BaseAPI
+
+
+class LoginAPI(BaseAPI):
+    """登录模块接口封装"""
+
+    def login(self, username, password):
+        """登录接口"""
+        payload = {
+            "username": username,
+            "password": password
+        }
+        return self.post("/api/login", json=payload)
+
+    def get_user_info(self, token):
+        """获取用户信息"""
+        headers = {"Authorization": f"Bearer {token}"}
+        return self.get("/api/user/info", headers=headers)
+
+
+# 实例化（单例模式，全局复用）
+login_api = LoginAPI()
+```
+
+**api/order_api.py**
+```python
+from base.base_api import BaseAPI
+
+
+class OrderAPI(BaseAPI):
+    """订单模块接口封装"""
+
+    def create_order(self, token, item_id, quantity=1):
+        """创建订单"""
+        headers = {"Authorization": f"Bearer {token}"}
+        payload = {"item_id": item_id, "quantity": quantity}
+        return self.post("/api/order/create", json=payload, headers=headers)
+
+    def get_order(self, token, order_id):
+        """查询订单"""
+        headers = {"Authorization": f"Bearer {token}"}
+        return self.get(f"/api/order/{order_id}", headers=headers)
+
+
+order_api = OrderAPI()
+```
+
+> 🎯 **注意**：api 层完全不知道底层用的是 requests 还是 httpx，它只调 `self.post()`。
+
+---
+
+#### 4️⃣ data 数据层
+
+**data/login_data.yaml**
+```yaml
+# 登录测试数据
+success_case:
+  username: "admin"
+  password: "123456"
+  expected_code: 200
+
+wrong_password:
+  username: "admin"
+  password: "wrong"
+  expected_code: 401
+
+empty_username:
+  username: ""
+  password: "123456"
+  expected_code: 400
+```
+
+**utils/yaml_util.py**
+```python
+import yaml
+
+
+def read_yaml(file_path):
+    """读取 YAML 文件"""
+    with open(file_path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+def read_yaml_list(file_path):
+    """读取 YAML 并转成 pytest 参数化需要的列表格式"""
+    data = read_yaml(file_path)
+    return [(k, v) for k, v in data.items()]
+```
+
+---
+
+#### 5️⃣ utils 工具层
+
+**utils/log_util.py**
+```python
+from loguru import logger
+import sys
+
+# 移除默认 handler
+logger.remove()
+
+# 控制台输出
+logger.add(
+    sys.stdout,
+    format="<green>{time:HH:mm:ss}</green> | <level>{level:<8}</level> | {message}",
+    level="DEBUG"
+)
+
+# 文件输出（按天轮转，保留 7 天）
+logger.add(
+    "logs/{time:YYYY-MM-DD}.log",
+    rotation="1 day",
+    retention="7 days",
+    level="INFO"
+)
+```
+
+> 🎯 **为什么用 loguru 不用 logging**：loguru 开箱即用，一行代码搞定格式化 + 轮转 + 颜色，面试可以说"团队统一用 loguru 提升开发效率"。
+
+---
+
+#### 6️⃣ testcases 用例层
+
+**testcases/test_login.py**
+```python
+import pytest
+from api.login_api import login_api
+from utils.yaml_util import read_yaml
+
+
+class TestLogin:
+    """登录模块测试"""
+
+    # 读取测试数据
+    data = read_yaml("data/login_data.yaml")
+
+    def test_login_success(self):
+        """正常登录"""
+        d = self.data["success_case"]
+        resp = login_api.login(d["username"], d["password"])
+        assert resp.status_code == d["expected_code"]
+        assert "token" in resp.json()
+
+    def test_wrong_password(self):
+        """密码错误"""
+        d = self.data["wrong_password"]
+        resp = login_api.login(d["username"], d["password"])
+        assert resp.status_code == d["expected_code"]
+
+    def test_empty_username(self):
+        """用户名为空"""
+        d = self.data["empty_username"]
+        resp = login_api.login(d["username"], d["password"])
+        assert resp.status_code == d["expected_code"]
+```
+
+> 🎯 **看用例层**：没有任何 `requests.post()`、没有 URL、没有 header 拼接。只有**业务逻辑 + 断言**，一眼看懂在测什么。
+
+---
+
+#### 7️⃣ conftest.py 全局 Fixture
+
+```python
+import pytest
+from api.login_api import login_api
+
+
+@pytest.fixture(scope="session")
+def login_token():
+    """全局登录 token，整个测试只执行一次"""
+    resp = login_api.login("admin", "123456")
+    assert resp.status_code == 200
+    token = resp.json()["token"]
+    return token
+```
+
+**在用例中使用**：
+```python
+def test_create_order(login_token):
+    """需要登录态的用例，直接用 fixture"""
+    resp = order_api.create_order(login_token, item_id="SKU001")
+    assert resp.status_code == 200
+```
+
+---
+
+### 分层前 vs 分层后对比
+
+**分层前（100 行混在一起）**：
+```python
+def test_create_order():
+    # 登录
+    resp = requests.post("http://dev-api.com/api/login",
+                         json={"username": "admin", "password": "123456"})
+    token = resp.json()["token"]
+    # 下单
+    resp = requests.post("http://dev-api.com/api/order/create",
+                         json={"item_id": "SKU001"},
+                         headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+```
+
+**分层后（3 行搞定）**：
+```python
+def test_create_order(login_token):
+    resp = order_api.create_order(login_token, item_id="SKU001")
+    assert resp.status_code == 200
+```
+
+> **面试话术**：*"分层后，用例只关心业务逻辑和断言，技术细节全部下沉到 base 和 api 层。换环境改 config，加日志改 base，新增接口改 api，互不影响。"*
+
+---
+
+*最后更新：2026-05-05*
