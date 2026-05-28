@@ -1,8 +1,6 @@
-# Docker 笔记:测开面试核心
+﻿# Docker 笔记:测开面试核心增强版
 
-> 学习日期:2025-05-23
-> 主题:Docker 核心概念 + 测开常用场景
-> 适用:测试开发工程师面试 & 实战
+> 学习日期:2025-05-23`r`n> 优化日期:2026-05-28`r`n> 主题:Docker 核心概念 + 镜像构建 + 网络存储 + 测开常用场景 + 实战排障`r`n> 适用:测试开发工程师面试、接口自动化、集成测试、CI/CD 与环境排查
 
 ---
 
@@ -13,9 +11,18 @@
 - [三、Dockerfile](#三dockerfile)
 - [四、docker-compose](#四docker-compose)
 - [五、测开常用场景](#五测开常用场景)
-- [六、面试问答模板](#六面试问答模板)
-- [七、命令速查表](#七命令速查表)
-
+- [六、Docker 架构与镜像分层](#六docker-架构与镜像分层)
+- [七、Dockerfile 进阶与最佳实践](#七dockerfile-进阶与最佳实践)
+- [八、Docker 网络与容器间通信](#八docker-网络与容器间通信)
+- [九、Volume / Bind Mount / tmpfs](#九volume--bind-mount--tmpfs)
+- [十、健康检查、资源限制与退出码](#十健康检查资源限制与退出码)
+- [十一、docker compose 进阶](#十一docker-compose-进阶)
+- [十二、常见故障排查手册](#十二常见故障排查手册)
+- [十三、Testcontainers 与 pytest 集成](#十三testcontainers-与-pytest-集成)
+- [十四、镜像仓库与安全实践](#十四镜像仓库与安全实践)
+- [十五、实战命令增强](#十五实战命令增强)
+- [十六、面试问答模板](#十六面试问答模板)
+- [十七、命令速查表](#十七命令速查表)
 ---
 
 ## 一、核心概念
@@ -364,7 +371,738 @@ docker volume rm mysql-data    # 删除数据卷
 
 ---
 
-## 六、面试问答模板
+## 六、Docker 架构与镜像分层
+
+### 6.1 Docker 架构
+
+```text
+用户输入 docker 命令
+        ↓
+Docker Client
+        ↓
+Docker Daemon(dockerd)
+        ↓
+管理镜像、容器、网络、数据卷
+        ↓
+从 Registry 拉取/推送镜像
+```
+
+| 组件 | 作用 |
+|---|---|
+| Docker Client | 接收 `docker` 命令 |
+| Docker Daemon | 真正管理镜像、容器、网络、数据卷 |
+| Docker Registry | 镜像仓库,如 Docker Hub、Harbor |
+| Image | 只读模板 |
+| Container | 镜像运行起来的实例 |
+
+面试表达:
+
+> 我们执行的 `docker` 命令是客户端,Docker Daemon 才是真正干活的进程。Daemon 负责创建容器、构建镜像、管理网络和数据卷,镜像可以从 Registry 拉取或推送。
+
+### 6.2 镜像分层 Layer
+
+Docker 镜像不是一个完整大文件,而是由多层只读 layer 叠加组成。
+
+```text
+python:3.11-slim 基础层
+        ↓
+安装依赖层 RUN pip install ...
+        ↓
+复制代码层 COPY . .
+        ↓
+启动命令层 CMD ...
+```
+
+特点:
+
+- 每条 `RUN`、`COPY`、`ADD` 通常会生成新层。
+- 相同 layer 可以被多个镜像复用。
+- 构建时如果前面的层没变,可以直接使用缓存。
+- 所以应该先复制依赖文件,再复制业务代码。
+
+### 6.3 写时复制 Copy-on-Write
+
+容器启动时不会复制一整份镜像,而是在只读镜像层上加一层可写层。
+
+```text
+只读镜像层:系统文件、依赖、代码
+可写容器层:容器运行后产生的改动
+```
+
+如果容器修改文件,改动会写入容器自己的可写层,不会影响原镜像。
+
+面试表达:
+
+> Docker 轻量的原因之一是镜像分层和写时复制。多个容器可以共享同一份只读镜像层,每个容器只维护自己的可写层。
+
+---
+
+## 七、Dockerfile 进阶与最佳实践
+
+### 7.1 ENTRYPOINT 和 CMD 的区别
+
+```dockerfile
+ENTRYPOINT ["python", "app.py"]
+CMD ["--port", "8080"]
+```
+
+| 指令 | 作用 |
+|---|---|
+| `ENTRYPOINT` | 固定入口命令 |
+| `CMD` | 默认启动命令或默认参数 |
+
+理解:
+
+```text
+ENTRYPOINT 更像“固定执行谁”
+CMD 更像“默认参数是什么”
+```
+
+运行时:
+
+```bash
+docker run my-app:1.0 --port 9090
+```
+
+这里 `--port 9090` 会覆盖默认 CMD 参数。
+
+### 7.2 ARG 和 ENV
+
+```dockerfile
+ARG APP_VERSION=dev
+ENV ENVIRONMENT=test
+```
+
+| 指令 | 作用 | 生命周期 |
+|---|---|---|
+| `ARG` | 构建时变量 | 只在 build 阶段有效 |
+| `ENV` | 环境变量 | 镜像和容器运行时都存在 |
+
+构建时传参:
+
+```bash
+docker build --build-arg APP_VERSION=1.0 -t my-app:1.0 .
+```
+
+### 7.3 USER:不要总用 root 运行
+
+```dockerfile
+RUN useradd -m appuser
+USER appuser
+```
+
+原因:
+
+- 降低容器逃逸或误操作风险。
+- 避免容器内进程以 root 权限运行。
+- 更接近生产安全要求。
+
+### 7.4 HEALTHCHECK
+
+```dockerfile
+HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+```
+
+查看健康状态:
+
+```bash
+docker ps
+```
+
+### 7.5 .dockerignore
+
+`.dockerignore` 用来排除不需要复制进镜像的文件。
+
+```text
+.git
+__pycache__
+.pytest_cache
+node_modules
+allure-results
+.env
+*.log
+```
+
+好处:
+
+- 减少构建上下文大小。
+- 加快构建速度。
+- 避免把敏感文件打进镜像。
+
+### 7.6 多阶段构建
+
+适合前端、Go、Java 等需要构建产物的项目。
+
+```dockerfile
+FROM node:20 AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+```
+
+优点:
+
+- 构建阶段有完整工具链。
+- 运行阶段只保留最终产物。
+- 镜像更小,攻击面更少。
+
+### 7.7 Dockerfile 最佳实践
+
+- 使用明确版本,不要在生产使用 `latest`。
+- 优先使用小镜像,如 `python:3.11-slim`。
+- 先复制依赖文件,再复制代码,充分利用缓存。
+- 不要把密码、Token 写进 Dockerfile。
+- 使用 `.dockerignore` 排除无关文件。
+- 尽量用非 root 用户运行。
+- 一个容器只跑一个主进程。
+- 构建后可做镜像漏洞扫描。
+
+---
+
+## 八、Docker 网络与容器间通信
+
+### 8.1 常见网络模式
+
+| 网络模式 | 说明 |
+|---|---|
+| `bridge` | 默认模式,容器通过虚拟网桥通信 |
+| `host` | 容器共享宿主机网络 |
+| `none` | 容器无网络 |
+| 自定义 bridge | 推荐用于多个容器互相访问 |
+
+常用命令:
+
+```bash
+docker network ls
+docker network inspect bridge
+docker network create test-net
+```
+
+### 8.2 容器名通信
+
+在同一个自定义网络中,容器可以用容器名互相访问。
+
+```bash
+# 创建网络
+docker network create test-net
+
+# 启动 MySQL
+docker run -d \
+  --name mysql \
+  --network test-net \
+  -e MYSQL_ROOT_PASSWORD=123456 \
+  mysql:8.0
+
+# 启动应用容器,应用里 DB_HOST=mysql
+docker run --rm \
+  --network test-net \
+  -e DB_HOST=mysql \
+  my-app:1.0
+```
+
+应用连接 MySQL:
+
+```text
+host=mysql
+port=3306
+```
+
+这和 docker compose 里用服务名访问服务是同一个逻辑。
+
+### 8.3 端口映射再理解
+
+```bash
+docker run -p 8080:80 nginx
+```
+
+含义:
+
+```text
+宿主机 8080 -> 容器 80
+```
+
+注意:
+
+- 容器之间通信通常不需要 `-p`,走 Docker 网络即可。
+- `-p` 是为了让宿主机或外部访问容器。
+
+### 8.4 网络排查命令
+
+```bash
+# 查看容器 IP、网络、端口映射
+docker inspect container_name
+
+# 查看端口映射
+docker port container_name
+
+# 临时起一个 curl 容器测试网络
+docker run --rm --network test-net curlimages/curl:latest http://app:8080/health
+```
+
+---
+
+## 九、Volume / Bind Mount / tmpfs
+
+### 9.1 三种挂载方式
+
+| 类型 | 说明 | 适合场景 |
+|---|---|---|
+| volume | Docker 管理的数据卷 | MySQL、Redis 等持久化数据 |
+| bind mount | 挂载宿主机指定路径 | 本地代码、配置文件、测试报告 |
+| tmpfs | 挂载到内存 | 临时文件、敏感临时数据 |
+
+### 9.2 volume
+
+```bash
+docker volume create mysql-data
+
+docker run -d \
+  --name mysql \
+  -v mysql-data:/var/lib/mysql \
+  -e MYSQL_ROOT_PASSWORD=123456 \
+  mysql:8.0
+```
+
+查看和删除:
+
+```bash
+docker volume ls
+docker volume inspect mysql-data
+docker volume rm mysql-data
+```
+
+### 9.3 bind mount
+
+```bash
+# 把当前目录挂载到容器 /app
+docker run --rm -v $(pwd):/app -w /app python:3.11 pytest tests/
+```
+
+适合:
+
+- 本地代码调试。
+- 挂载配置文件。
+- 导出测试报告。
+
+### 9.4 tmpfs
+
+```bash
+docker run --tmpfs /tmp my-app:1.0
+```
+
+特点:
+
+- 数据存在内存里。
+- 容器停止后数据消失。
+- 适合临时数据。
+
+---
+
+## 十、健康检查、资源限制与退出码
+
+### 10.1 HEALTHCHECK 与健康状态
+
+Dockerfile:
+
+```dockerfile
+HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+```
+
+compose:
+
+```yaml
+healthcheck:
+  test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+  interval: 10s
+  timeout: 3s
+  retries: 3
+```
+
+查看:
+
+```bash
+docker ps
+docker inspect container_name
+```
+
+### 10.2 资源限制
+
+```bash
+# 限制内存和 CPU
+docker run --memory=512m --cpus=1 my-app:1.0
+```
+
+查看资源使用:
+
+```bash
+docker stats
+```
+
+常见结论:
+
+- 内存超过限制,容器可能被 OOM kill。
+- CPU 超过限制通常会被限速。
+- 压测时建议结合 `docker stats` 观察容器资源。
+
+### 10.3 容器退出码
+
+查看退出码:
+
+```bash
+docker ps -a
+docker inspect container_name --format='{{.State.ExitCode}}'
+```
+
+常见退出码:
+
+| 退出码 | 含义 |
+|---|---|
+| 0 | 正常退出 |
+| 1 | 应用错误 |
+| 125 | Docker 命令本身失败 |
+| 126 | 命令不可执行 |
+| 127 | 命令不存在 |
+| 137 | SIGKILL,常见 OOM 或被强杀 |
+| 143 | SIGTERM,优雅停止 |
+
+### 10.4 stop 和 kill 区别
+
+```bash
+docker stop container_name
+docker kill container_name
+```
+
+区别:
+
+- `docker stop`:先发 SIGTERM,等待一段时间后再 SIGKILL。
+- `docker kill`:直接强制杀死。
+
+---
+
+## 十一、docker compose 进阶
+
+### 11.1 新旧命令区别
+
+```bash
+# 老版本
+docker-compose up -d
+
+# 新版本 Docker Compose v2
+docker compose up -d
+```
+
+现在更推荐 `docker compose`。
+
+### 11.2 常用字段
+
+```yaml
+services:
+  app:
+    build: .
+    image: my-app:1.0
+    container_name: test-app
+    command: pytest tests/ -v
+    working_dir: /app
+    environment:
+      ENV: test
+    volumes:
+      - .:/app
+    ports:
+      - "8080:8080"
+    networks:
+      - test-net
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+networks:
+  test-net:
+```
+
+字段说明:
+
+| 字段 | 作用 |
+|---|---|
+| `build` | 指定构建上下文 |
+| `image` | 指定镜像名 |
+| `command` | 覆盖容器默认命令 |
+| `working_dir` | 容器工作目录 |
+| `environment` | 环境变量 |
+| `volumes` | 挂载目录或数据卷 |
+| `ports` | 端口映射 |
+| `networks` | 指定网络 |
+| `restart` | 重启策略 |
+| `depends_on` | 服务依赖 |
+
+### 11.3 compose 常用排查命令
+
+```bash
+docker compose ps
+docker compose logs -f app
+docker compose exec app bash
+docker compose run --rm app pytest tests/ -v
+docker compose config
+```
+
+`docker compose config` 可以展开并校验 compose 配置。
+
+---
+
+## 十二、常见故障排查手册
+
+### 12.1 容器启动后立刻退出
+
+排查:
+
+```bash
+docker ps -a
+docker logs container_name
+docker inspect container_name --format='{{.State.ExitCode}}'
+```
+
+常见原因:
+
+- 主进程执行完就退出。
+- CMD/ENTRYPOINT 写错。
+- 应用启动报错。
+- 缺少环境变量或配置文件。
+
+### 12.2 端口访问不通
+
+排查:
+
+```bash
+docker ps
+docker port container_name
+docker logs container_name
+```
+
+检查点:
+
+- 是否配置了 `-p 宿主端口:容器端口`。
+- 应用是否监听 `0.0.0.0`,而不是只监听 `127.0.0.1`。
+- 容器内服务是否真的启动。
+- 宿主机端口是否被占用。
+
+### 12.3 容器连不上 MySQL / Redis
+
+检查点:
+
+- 是否在同一个 Docker 网络。
+- 是否使用服务名/容器名作为 host。
+- 端口用的是容器端口,不是宿主机映射端口。
+- 数据库是否健康就绪。
+
+示例:
+
+```bash
+docker network inspect test-net
+docker logs mysql
+docker exec -it app bash
+```
+
+### 12.4 镜像构建失败
+
+常见原因:
+
+- Dockerfile 路径不对。
+- 构建上下文太大。
+- 依赖下载失败。
+- `COPY` 的文件被 `.dockerignore` 排除了。
+- 基础镜像拉取失败。
+
+排查:
+
+```bash
+docker build --no-cache -t my-app:debug .
+```
+
+### 12.5 容器内没有 bash
+
+很多精简镜像没有 bash,可以用 sh:
+
+```bash
+docker exec -it container_name sh
+```
+
+### 12.6 磁盘被 Docker 占满
+
+查看占用:
+
+```bash
+docker system df
+```
+
+清理无用资源:
+
+```bash
+docker container prune
+docker image prune
+docker system prune
+```
+
+危险命令:
+
+```bash
+docker volume prune
+```
+
+`volume prune` 可能删除测试数据库数据,执行前必须确认。
+
+---
+
+## 十三、Testcontainers 与 pytest 集成
+
+手动用 `subprocess` 起容器可以工作,但更推荐 Testcontainers 管理测试依赖。
+
+### 13.1 MySQL 示例
+
+```python
+from testcontainers.mysql import MySqlContainer
+
+
+def test_mysql_container():
+    with MySqlContainer("mysql:8.0") as mysql:
+        conn_url = mysql.get_connection_url()
+        assert conn_url
+```
+
+### 13.2 Redis 示例
+
+```python
+from testcontainers.redis import RedisContainer
+
+
+def test_redis_container():
+    with RedisContainer("redis:7") as redis:
+        host = redis.get_container_host_ip()
+        port = redis.get_exposed_port(6379)
+        assert host
+        assert port
+```
+
+### 13.3 优势
+
+- 自动拉起依赖容器。
+- 自动等待服务就绪。
+- 测试结束自动清理。
+- 更适合集成测试和 CI。
+- 减少手写启动/清理脚本。
+
+---
+
+## 十四、镜像仓库与安全实践
+
+### 14.1 镜像仓库
+
+常见仓库:
+
+- Docker Hub。
+- 公司私有 Harbor。
+- 云厂商镜像仓库。
+
+常用命令:
+
+```bash
+# 登录仓库
+docker login registry.example.com
+
+# 打标签
+docker tag my-app:1.0 registry.example.com/test/my-app:1.0
+
+# 推送镜像
+docker push registry.example.com/test/my-app:1.0
+
+# 拉取镜像
+docker pull registry.example.com/test/my-app:1.0
+```
+
+### 14.2 安全实践
+
+- 不要把密码、Token、私钥写进镜像。
+- 不要把 `.env`、证书、测试报告等无关文件打进镜像。
+- 生产镜像不要使用 `latest`。
+- 尽量使用官方镜像或可信基础镜像。
+- 使用非 root 用户运行容器。
+- 镜像发布前进行漏洞扫描。
+- 删除不必要的构建工具和缓存。
+
+---
+
+## 十五、实战命令增强
+
+### 15.1 inspect / stats / top / diff
+
+```bash
+# 查看容器详细信息
+docker inspect container_name
+
+# 查看 CPU/内存/网络/磁盘 IO
+docker stats
+
+# 查看容器内进程
+docker top container_name
+
+# 查看容器文件系统变化
+docker diff container_name
+```
+
+### 15.2 日志增强
+
+```bash
+# 看最后 100 行
+docker logs --tail 100 container_name
+
+# 看最近 10 分钟日志
+docker logs --since 10m container_name
+
+# 实时跟踪最近 200 行
+docker logs -f --tail 200 container_name
+```
+
+### 15.3 复制文件
+
+```bash
+# 从容器复制到宿主机
+docker cp container_name:/app/report ./report
+
+# 从宿主机复制到容器
+docker cp ./config.yaml container_name:/app/config.yaml
+```
+
+### 15.4 清理命令
+
+```bash
+# 查看 Docker 占用空间
+docker system df
+
+# 清理停止的容器
+docker container prune
+
+# 清理悬空镜像
+docker image prune
+
+# 清理未使用网络
+docker network prune
+
+# 清理未使用数据卷,危险
+docker volume prune
+
+# 综合清理,谨慎
+docker system prune
+```
+
+---
+
+## 十六、面试问答模板
 
 ### Q1:"Docker 镜像和容器的关系?"
 
@@ -392,9 +1130,36 @@ docker volume rm mysql-data    # 删除数据卷
 
 > "`RUN` 在**构建镜像时**执行,结果固化到镜像层里(比如安装依赖)。`CMD` 在**容器启动时**执行(比如启动应用)。一个 Dockerfile 可以有多个 `RUN`,但通常只有一个 `CMD`。"
 
+### Q6:"Docker 为什么轻量?"
+
+> "Docker 容器共享宿主机内核,不需要像虚拟机一样启动完整操作系统。同时 Docker 镜像是分层的,多个容器可以共享只读镜像层,每个容器只维护自己的可写层,这叫写时复制。"
+
+### Q7:"CMD 和 ENTRYPOINT 的区别?"
+
+> "ENTRYPOINT 更像固定入口命令,CMD 更像默认命令或默认参数。`docker run image xxx` 通常会覆盖 CMD,但不会直接替换 ENTRYPOINT。常见写法是 ENTRYPOINT 指定程序,CMD 提供默认参数。"
+
+### Q8:"Docker 容器之间怎么通信?"
+
+> "推荐创建自定义 bridge 网络,把容器加入同一个网络。这样容器之间可以用容器名或 compose 服务名访问,比如应用连接 MySQL 时 host 写 `mysql`,port 写容器端口 `3306`。"
+
+### Q9:"volume 和 bind mount 有什么区别?"
+
+> "volume 由 Docker 管理,适合数据库等持久化数据。bind mount 是把宿主机指定路径挂进容器,适合本地代码、配置文件和测试报告。tmpfs 则存内存里,容器停止后数据消失。"
+
+### Q10:"容器启动后立刻退出怎么排查?"
+
+> "先 `docker ps -a` 看状态和退出码,再 `docker logs` 看应用报错,必要时 `docker inspect` 看启动命令和环境变量。常见原因是主进程执行完、CMD 写错、配置缺失或应用启动失败。"
+
+### Q11:"Docker 端口访问不通怎么排查?"
+
+> "先看 `docker ps` 是否有端口映射,再用 `docker port` 确认宿主端口到容器端口的映射。然后看应用是否监听容器内正确端口,并确认监听地址是 `0.0.0.0` 而不是只监听 `127.0.0.1`。"
+
+### Q12:"Dockerfile 怎么优化镜像大小?"
+
+> "使用更小的基础镜像,用 `.dockerignore` 排除无关文件,合并清理缓存,固定依赖版本,对需要构建产物的项目使用多阶段构建,运行阶段只保留最终产物。"
 ---
 
-## 七、命令速查表
+## 十七、命令速查表
 
 ### 镜像
 
@@ -427,6 +1192,79 @@ docker volume rm mysql-data    # 删除数据卷
 | `docker-compose down` | 停止并删除容器 |
 | `docker-compose down -v` | 停止并删除容器+数据卷 |
 
+### 网络
+
+| 命令 | 用途 |
+|---|---|
+| `docker network ls` | 查看网络 |
+| `docker network create test-net` | 创建自定义网络 |
+| `docker network inspect test-net` | 查看网络详情 |
+| `docker run --network test-net ...` | 容器加入指定网络 |
+| `docker port 容器` | 查看端口映射 |
+
+### 数据卷和挂载
+
+| 命令 | 用途 |
+|---|---|
+| `docker volume ls` | 查看数据卷 |
+| `docker volume inspect 卷名` | 查看数据卷详情 |
+| `docker volume rm 卷名` | 删除数据卷 |
+| `docker run -v 卷名:/path 镜像` | 使用命名 volume |
+| `docker run -v $(pwd):/app 镜像` | 使用 bind mount |
+| `docker run --tmpfs /tmp 镜像` | 使用 tmpfs |
+
+### 排障
+
+| 命令 | 用途 |
+|---|---|
+| `docker inspect 容器` | 查看容器详细信息 |
+| `docker stats` | 查看资源使用 |
+| `docker top 容器` | 查看容器进程 |
+| `docker diff 容器` | 查看容器文件变化 |
+| `docker logs --tail 100 容器` | 查看最后 100 行日志 |
+| `docker logs --since 10m 容器` | 查看最近 10 分钟日志 |
+| `docker inspect 容器 --format='{{.State.ExitCode}}'` | 查看退出码 |
+| `docker cp 容器:/path ./local` | 从容器复制文件 |
+
+### 清理
+
+| 命令 | 用途 |
+|---|---|
+| `docker system df` | 查看 Docker 空间占用 |
+| `docker container prune` | 清理停止容器 |
+| `docker image prune` | 清理悬空镜像 |
+| `docker network prune` | 清理未使用网络 |
+| `docker volume prune` | 清理未使用数据卷,危险 |
+| `docker system prune` | 综合清理,谨慎 |
+
+### 镜像仓库
+
+| 命令 | 用途 |
+|---|---|
+| `docker login registry` | 登录镜像仓库 |
+| `docker tag app:1.0 registry/app:1.0` | 打远程仓库标签 |
+| `docker push registry/app:1.0` | 推送镜像 |
+| `docker pull registry/app:1.0` | 拉取镜像 |
 ---
 
-*Docker:测开面试核心概念 + 5 大常用场景 —— 完结。*
+## 学习建议
+
+如果用于测开面试和实战,建议按下面顺序掌握:
+
+1. 镜像、容器、Dockerfile、Registry 的关系。
+2. docker run、logs、exec、ps、inspect、stats。
+3. Dockerfile 缓存、CMD/ENTRYPOINT、多阶段构建、.dockerignore。
+4. Docker 网络、容器名通信、端口映射。
+5. volume、bind mount、测试报告和数据库数据持久化。
+6. compose 编排 MySQL、Redis、应用和测试服务。
+7. 容器退出码、OOM、端口不通、构建失败等排障模型。
+8. CI/CD 中用容器跑自动化测试,复杂场景可用 Testcontainers。
+
+一句话总结:
+
+> Docker 对测开的核心价值是让测试环境可复制、可销毁、可自动化。面试不要只背命令,要能讲清楚镜像怎么构建、容器怎么通信、数据怎么持久化、服务起不来怎么排查。
+
+---
+
+*Docker:测开面试核心增强版 —— 完结。*
+
