@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ChangeListManager">
+    <list default="true" id="39032e96-6705-4d06-befe-56e910053036" name="更改" comment="">
+      <change beforePath="$PROJECT_DIR$/Linux内核_进程与内存管理_学习笔记.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/database_notes.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/django_complete.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/docker_notes.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/k8s_notes.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/linux_notes_optimized.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/pytest_study_notes.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/python_concurrency_complete.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/redis_notes.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/shell_notes.md" beforeDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
+  "lastFilter": {
+    "state": "OPEN",
+    "assignee": "AlanWalker91"
+  }
+}]]></component>
+  <component name="GithubPullRequestsUISettings"><![CDATA[{
+  "selectedUrlAndAccountId": {
+    "url": "https://github.com/AlanWalker91/python-algorithms-and-learning.git",
+    "accountId": "b1b15c55-5054-41f9-a0a2-c25247546708"
+  }
+}]]></component>
+  <component name="ProjectColorInfo"><![CDATA[{
+  "associatedIndex": 8
+}]]></component>
+  <component name="ProjectId" id="3F2MicSvzWUhKunOWL7VZuMHGp4" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "git-widget-placeholder": "main",
+    "last_opened_file_path": "E:/代码仓/python-algorithms-and-learning"
+  }
+}]]></component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-python-sdk-dfff61a61320-9cdd278e9d02-com.jetbrains.pycharm.community.sharedIndexes.bundled-PC-251.25410.159" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="默认任务">
+      <changelist id="39032e96-6705-4d06-befe-56e910053036" name="更改" comment="" />
+      <created>1781268838960</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1781268838960</updated>
+    </task>
+    <servers />
+  </component>
+</project>
